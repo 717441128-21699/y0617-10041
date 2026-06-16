@@ -1,0 +1,207 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum TenantStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  TRIAL
+}
+
+enum SubscriptionTier {
+  FREE
+  BASIC
+  PRO
+  ENTERPRISE
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  PENDING
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  PENDING
+  PAID
+  OVERDUE
+  VOID
+}
+
+enum AuditAction {
+  TENANT_CREATED
+  TENANT_UPDATED
+  MEMBER_INVITED
+  MEMBER_REMOVED
+  MEMBER_ROLE_UPDATED
+  ROLE_CREATED
+  ROLE_UPDATED
+  ROLE_DELETED
+  USER_LOGIN
+  USER_LOGOUT
+  SETTINGS_UPDATED
+  BILLING_PLAN_CHANGED
+  INVOICE_PAID
+  API_EXCEEDED_QUOTA
+}
+
+model Tenant {
+  id            String           @id @default(uuid())
+  name          String
+  subdomain     String         @unique
+  customDomain  String?
+  status        TenantStatus   @default(TRIAL)
+  schemaName    String         @unique
+  tier          SubscriptionTier @default(FREE)
+  primaryColor  String         @default("#3B82F6")
+  secondaryColor String       @default("#10B981")
+  logoUrl       String         @default("/default-logo.png")
+  faviconUrl    String?
+  settings      Json           @default("{}")
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  members       TenantMember[]
+  roles         Role[]
+  invitations   Invitation[]
+  apiUsage      ApiUsage[]
+  invoices      Invoice[]
+  auditLogs     AuditLog[]
+
+  @@index([subdomain])
+  @@index([customDomain])
+}
+
+model User {
+  id             String         @id @default(uuid())
+  email          String         @unique
+  passwordHash   String
+  name           String
+  status         UserStatus     @default(PENDING)
+  emailVerified  Boolean        @default(false)
+  createdAt      DateTime       @default(now())
+  lastLoginAt    DateTime?
+  tenants        TenantMember[]
+  @@index([email])
+}
+
+model TenantMember {
+  id         String   @id @default(uuid())
+  tenantId   String
+  userId     String
+  roleId     String
+  joinedAt   DateTime @default(now())
+  invitedBy  String?
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role       Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, userId])
+  @@index([tenantId])
+  @@index([userId])
+}
+
+model Role {
+  id          String         @id @default(uuid())
+  tenantId    String
+  name        String
+  description String?
+  permissions String[]
+  isSystem    Boolean        @default(false)
+  createdAt   DateTime       @default(now())
+  tenant      Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  members     TenantMember[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+}
+
+model Invitation {
+  id         String             @id @default(uuid())
+  tenantId   String
+  email      String
+  roleId     String
+  invitedBy  String
+  expiresAt  DateTime
+  acceptedAt DateTime?
+  status     InvitationStatus @default(PENDING)
+  tenant     Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, email])
+  @@index([status])
+}
+
+model ApiUsage {
+  id        String   @id @default(uuid())
+  tenantId  String
+  date      String
+  endpoint  String
+  method    String
+  count     Int      @default(0)
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, date, endpoint, method])
+  @@index([tenantId, date])
+}
+
+model Invoice {
+  id             String        @id @default(uuid())
+  tenantId       String
+  periodStart    DateTime
+  periodEnd      DateTime
+  totalCalls     Int         @default(0)
+  freeCalls      Int         @default(0)
+  billableCalls  Int         @default(0)
+  amount         Decimal     @default(0)
+  status         InvoiceStatus @default(DRAFT)
+  paidAt         DateTime?
+  createdAt      DateTime    @default(now())
+  tenant         Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  items          InvoiceItem[]
+
+  @@index([tenantId])
+  @@index([status])
+  @@index([periodStart, periodEnd])
+}
+
+model InvoiceItem {
+  id          String  @id @default(uuid())
+  invoiceId   String
+  description String
+  quantity    Int
+  unitPrice   Decimal
+  amount      Decimal
+  invoice     Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+}
+
+model AuditLog {
+  id         String      @id @default(uuid())
+  tenantId   String
+  userId     String?
+  action     AuditAction
+  actorEmail String?
+  targetType String?
+  targetId   String?
+  metadata   Json        @default("{}")
+  ipAddress  String?
+  userAgent  String?
+  timestamp  DateTime    @default(now())
+  tenant     Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, timestamp])
+  @@index([action])
+  @@index([userId])
+}

@@ -1,0 +1,20 @@
+{
+  "name": "multitenant-saas-platform",
+  "version": "1.0.0",
+  "description": "Multi-tenant SaaS application foundation framework",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:api": "npm run dev --workspace=@saas/api",
+    "dev:web": "npm run dev --workspace=@saas/web",
+    "dev:admin": "npm run dev --workspace=@saas/admin",
+    "build": "npm run build --workspaces",
+    "db:generate": "npm run db:generate --workspace=@saas/api",
+    "db:migrate": "npm run db:migrate --workspace=@saas/api"
+  },
+  "keywords": ["saas", "multitenant", "nodejs", "react"],
+  "author": "",
+  "license": "MIT"
+}
