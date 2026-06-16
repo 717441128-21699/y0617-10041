@@ -1,4 +1,4 @@
-import { prisma } from '../lib/prisma';
+import { prisma, getTenantClientById } from '../lib/prisma';
 import { redis, cacheSet, cacheGet, cacheDel } from '../lib/redis';
 import { BILLING_TIERS, getBillingTier, MonthlyUsage, Invoice, InvoiceItem } from '@saas/shared';
 import EmailService from './email.service';
@@ -32,17 +32,16 @@ export class BillingService {
       return { allowed: false, count: monthlyCount, limit: freeCalls };
     }
 
-    await prisma.apiUsage.upsert({
+    const tenantPrisma = await getTenantClientById(tenantId);
+    await tenantPrisma.apiUsage.upsert({
       where: {
-        tenantId_date_endpoint_method: {
-          tenantId,
+        date_endpoint_method: {
           date,
           endpoint,
           method,
         },
       },
       create: {
-        tenantId,
         date,
         endpoint,
         method,
@@ -80,9 +79,9 @@ export class BillingService {
       throw new Error('Tenant not found');
     }
 
-    const usageRecords = await prisma.apiUsage.findMany({
+    const tenantPrisma = await getTenantClientById(tenantId);
+    const usageRecords = await tenantPrisma.apiUsage.findMany({
       where: {
-        tenantId,
         date: {
           gte: startDate.toISOString().split('T')[0],
           lte: endDate.toISOString().split('T')[0],
@@ -155,9 +154,9 @@ export class BillingService {
         lastMonth.getMonth() + 1
       );
 
-      const existingInvoice = await prisma.invoice.findFirst({
+      const tenantPrisma = await getTenantClientById(tenant.id);
+      const existingInvoice = await tenantPrisma.invoice.findFirst({
         where: {
-          tenantId: tenant.id,
           periodStart,
           periodEnd,
         },
@@ -168,9 +167,8 @@ export class BillingService {
         continue;
       }
 
-      const invoice = await prisma.invoice.create({
+      const invoice = await tenantPrisma.invoice.create({
         data: {
-          tenantId: tenant.id,
           periodStart,
           periodEnd,
           totalCalls: usage.totalCalls,
@@ -205,7 +203,7 @@ export class BillingService {
         }
 
         for (const item of items) {
-          await prisma.invoiceItem.create({
+          await tenantPrisma.invoiceItem.create({
             data: {
               invoiceId: invoice.id,
               description: item.description,
@@ -217,18 +215,19 @@ export class BillingService {
         }
       }
 
-      await prisma.invoice.update({
+      await tenantPrisma.invoice.update({
         where: { id: invoice.id },
         data: { status: 'PENDING' },
       });
 
-      const owner = await prisma.tenantMember.findFirst({
-        where: {
-          tenantId: tenant.id,
-          role: { name: 'Owner' },
-        },
-        include: { user: true },
+      const member = await tenantPrisma.tenantMember.findFirst({
+        include: { role: true },
       });
+      let owner: any = null;
+      if (member) {
+        const user = await prisma.user.findUnique({ where: { id: member.userId } });
+        if (user && member.role?.name === 'Owner') owner = { user };
+      }
 
       if (owner && usage.estimatedCost > 0) {
         await EmailService.sendInvoice(
@@ -247,9 +246,9 @@ export class BillingService {
   }
 
   static async getInvoices(tenantId: string, page: number = 1, limit: number = 20): Promise<any> {
+    const tenantPrisma = await getTenantClientById(tenantId);
     const [invoices, total] = await Promise.all([
-      prisma.invoice.findMany({
-        where: { tenantId },
+      tenantPrisma.invoice.findMany({
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
@@ -257,7 +256,7 @@ export class BillingService {
           items: true,
         },
       }),
-      prisma.invoice.count({ where: { tenantId } }),
+      tenantPrisma.invoice.count(),
     ]);
 
     return {

@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { config } from '../config';
-import { prisma } from '../lib/prisma';
+import { prisma, getTenantClientById } from '../lib/prisma';
 import { JwtPayload } from '@saas/shared';
 
 declare global {
@@ -58,13 +58,9 @@ export async function authMiddleware(
     let role: string | undefined;
 
     if (req.tenant && payload.tenantId === req.tenant.id) {
-      const membership = await prisma.tenantMember.findUnique({
-        where: {
-          tenantId_userId: {
-            tenantId: req.tenant.id,
-            userId: user.id,
-          },
-        },
+      const tenantPrisma = await getTenantClientById(req.tenant.id);
+      const membership = await tenantPrisma.tenantMember.findUnique({
+        where: { userId: user.id },
         include: {
           role: {
             select: {
@@ -75,7 +71,7 @@ export async function authMiddleware(
         },
       });
 
-      if (membership) {
+      if (membership && membership.role) {
         role = membership.role.name;
         permissions = membership.role.permissions;
       }

@@ -74,13 +74,6 @@ model Tenant {
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
 
-  members       TenantMember[]
-  roles         Role[]
-  invitations   Invitation[]
-  apiUsage      ApiUsage[]
-  invoices      Invoice[]
-  auditLogs     AuditLog[]
-
   @@index([subdomain])
   @@index([customDomain])
 }
@@ -94,39 +87,7 @@ model User {
   emailVerified  Boolean        @default(false)
   createdAt      DateTime       @default(now())
   lastLoginAt    DateTime?
-  tenants        TenantMember[]
   @@index([email])
-}
-
-model TenantMember {
-  id         String   @id @default(uuid())
-  tenantId   String
-  userId     String
-  roleId     String
-  joinedAt   DateTime @default(now())
-  invitedBy  String?
-  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  role       Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
-
-  @@unique([tenantId, userId])
-  @@index([tenantId])
-  @@index([userId])
-}
-
-model Role {
-  id          String         @id @default(uuid())
-  tenantId    String
-  name        String
-  description String?
-  permissions String[]
-  isSystem    Boolean        @default(false)
-  createdAt   DateTime       @default(now())
-  tenant      Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  members     TenantMember[]
-
-  @@unique([tenantId, name])
-  @@index([tenantId])
 }
 
 model Invitation {
@@ -138,28 +99,34 @@ model Invitation {
   expiresAt  DateTime
   acceptedAt DateTime?
   status     InvitationStatus @default(PENDING)
-  tenant     Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, email])
   @@index([status])
 }
 
+model TenantMember {
+  id         String   @id @default(uuid())
+  userId     String
+  roleId     String
+  joinedAt   DateTime @default(now())
+  invitedBy  String?
+
+  @@unique([userId])
+}
+
 model ApiUsage {
   id        String   @id @default(uuid())
-  tenantId  String
   date      String
   endpoint  String
   method    String
   count     Int      @default(0)
-  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  @@unique([tenantId, date, endpoint, method])
-  @@index([tenantId, date])
+  @@unique([date, endpoint, method])
+  @@index([date])
 }
 
 model Invoice {
   id             String        @id @default(uuid())
-  tenantId       String
   periodStart    DateTime
   periodEnd      DateTime
   totalCalls     Int         @default(0)
@@ -169,10 +136,8 @@ model Invoice {
   status         InvoiceStatus @default(DRAFT)
   paidAt         DateTime?
   createdAt      DateTime    @default(now())
-  tenant         Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   items          InvoiceItem[]
 
-  @@index([tenantId])
   @@index([status])
   @@index([periodStart, periodEnd])
 }
@@ -189,7 +154,6 @@ model InvoiceItem {
 
 model AuditLog {
   id         String      @id @default(uuid())
-  tenantId   String
   userId     String?
   action     AuditAction
   actorEmail String?
@@ -199,9 +163,8 @@ model AuditLog {
   ipAddress  String?
   userAgent  String?
   timestamp  DateTime    @default(now())
-  tenant     Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  @@index([tenantId, timestamp])
+  @@index([timestamp])
   @@index([action])
   @@index([userId])
 }

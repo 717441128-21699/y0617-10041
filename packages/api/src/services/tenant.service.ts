@@ -1,6 +1,6 @@
 import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
-import { prisma, createTenantSchema } from '../lib/prisma';
+import { prisma, createTenantSchema, migrateTenantSchema, getTenantClientById, getTenantClient } from '../lib/prisma';
 import { cacheDel } from '../lib/redis';
 import { DEFAULT_ROLES } from '../config';
 import { CreateTenantInput, UpdateTenantInput, Tenant, AuditAction } from '@saas/shared';
@@ -26,72 +26,79 @@ export class TenantService {
 
     const schemaName = `tenant_${uuidv4().replace(/-/g, '_')}`;
 
-    const result = await prisma.$transaction(async (tx: any) => {
-      const passwordHash = await bcrypt.hash(input.adminPassword, 12);
+    const passwordHash = await bcrypt.hash(input.adminPassword, 12);
 
-      const user = await tx.user.create({
-        data: {
-          email: input.adminEmail,
-          name: input.adminName,
-          passwordHash,
-          status: 'ACTIVE',
-          emailVerified: true,
-        },
-      });
-
-      const tenant = await tx.tenant.create({
-        data: {
-          name: input.name,
-          subdomain: input.subdomain,
-          schemaName,
-          status: 'ACTIVE',
-          tier: 'FREE',
-        },
-      });
-
-      await createTenantSchema(schemaName);
-
-      const roles: Array<{ id: string; name: string }> = [];
-      for (const roleData of DEFAULT_ROLES) {
-        const role = await tx.role.create({
-          data: {
-            tenantId: tenant.id,
-            name: roleData.name,
-            description: roleData.description,
-            permissions: roleData.permissions,
-            isSystem: roleData.isSystem,
-          },
-        });
-        roles.push(role);
-      }
-
-      const ownerRole = roles.find(r => r.name === 'Owner');
-      if (!ownerRole) {
-        throw new Error('Owner role not created');
-      }
-
-      await tx.tenantMember.create({
-        data: {
-          tenantId: tenant.id,
-          userId: user.id,
-          roleId: ownerRole.id,
-        },
-      });
-
-      await AuditService.log({
-        tenantId: tenant.id,
-        userId: user.id,
-        action: AuditAction.TENANT_CREATED,
-        actorEmail: user.email,
-        targetType: 'tenant',
-        targetId: tenant.id,
-        metadata: { name: input.name, subdomain: input.subdomain },
-      });
-
-      return { tenant, userId: user.id };
+    const user = await prisma.user.create({
+      data: {
+        email: input.adminEmail,
+        name: input.adminName,
+        passwordHash,
+        status: 'ACTIVE',
+        emailVerified: true,
+      },
     });
 
-    return result;
+    const tenant = await prisma.tenant.create({
+      data: {
+        name: input.name,
+        subdomain: input.subdomain,
+        schemaName,
+        status: 'ACTIVE',
+        tier: 'FREE',
+      },
+    });
+
+    await createTenantSchema(schemaName);
+    await migrateTenantSchema(schemaName);
+
+    const tenantPrisma = await getTenantClient(schemaName);
+
+    const roles: Array<{ id: string; name: string }> = [];
+    for (const roleData of DEFAULT_ROLES) {
+      const role = await tenantPrisma.role.create({
+        data: {
+          name: roleData.name,
+          description: roleData.description,
+          permissions: roleData.permissions,
+          isSystem: roleData.isSystem,
+        },
+      });
+      roles.push(role);
+    }
+
+    const ownerRole = roles.find(r => r.name === 'Owner');
+    if (!ownerRole) {
+      throw new Error('Owner role not created');
+    }
+
+    await tenantPrisma.tenantMember.create({
+      data: {
+        userId: user.id,
+        roleId: ownerRole.id,
+      },
+    });
+
+    await AuditService.log({
+      tenantId: tenant.id,
+      userId: user.id,
+      action: AuditAction.TENANT_CREATED,
+      actorEmail: user.email,
+      targetType: 'tenant',
+      targetId: tenant.id,
+      metadata: { name: input.name, subdomain: input.subdomain },
+    });
+
+    return {
+      tenant: {
+        ...tenant,
+        theme: {
+          primaryColor: tenant.primaryColor,
+          secondaryColor: tenant.secondaryColor,
+          logoUrl: tenant.logoUrl,
+        },
+      } as unknown as Tenant,
+      userId: user.id,
+    };
   }
 
   static async getTenantById(tenantId: string): Promise<Tenant | null> {

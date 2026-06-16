@@ -1,8 +1,19 @@
 import { PrismaClient, Prisma } from '@prisma/client';
 
+export interface TenantScopedPrisma extends PrismaClient {
+  role: any;
+  tenantMember: any;
+  apiUsage: any;
+  invoice: any;
+  invoiceItem: any;
+  auditLog: any;
+}
+
+const TENANT_SCHEMA_CACHE_KEY = 'tenant_schema_name:';
+
 class PrismaManager {
   private static instance: PrismaClient | null = null;
-  private static tenantClients: Map<string, PrismaClient> = new Map();
+  private static tenantClients: Map<string, TenantScopedPrisma> = new Map();
 
   static getInstance(): PrismaClient {
     if (!PrismaManager.instance) {
@@ -11,7 +22,25 @@ class PrismaManager {
     return PrismaManager.instance;
   }
 
-  static async getTenantClient(schemaName: string): Promise<PrismaClient> {
+  static async getTenantClientById(tenantId: string): Promise<TenantScopedPrisma> {
+    const cacheKey = `${TENANT_SCHEMA_CACHE_KEY}${tenantId}`;
+    const { cacheGet, cacheSet } = await import('./redis');
+    let schemaName = await cacheGet<string>(cacheKey);
+    
+    if (!schemaName) {
+      const tenant = await PrismaManager.getInstance().tenant.findUnique({
+        where: { id: tenantId },
+        select: { schemaName: true },
+      });
+      if (!tenant) throw new Error('Tenant not found');
+      schemaName = tenant.schemaName;
+      await cacheSet(cacheKey, schemaName, 3600);
+    }
+    
+    return PrismaManager.getTenantClient(schemaName);
+  }
+
+  static async getTenantClient(schemaName: string): Promise<TenantScopedPrisma> {
     if (PrismaManager.tenantClients.has(schemaName)) {
       return PrismaManager.tenantClients.get(schemaName)!;
     }
@@ -24,7 +53,7 @@ class PrismaManager {
           url: schemaUrl,
         },
       },
-    });
+    }) as unknown as TenantScopedPrisma;
 
     PrismaManager.tenantClients.set(schemaName, client);
     return client;
@@ -34,9 +63,6 @@ class PrismaManager {
     const prisma = PrismaManager.getInstance();
     await prisma.$executeRawUnsafe(
       `CREATE SCHEMA IF NOT EXISTS "${schemaName}"`
-    );
-    await prisma.$executeRawUnsafe(
-      `SET search_path TO "${schemaName}"`
     );
   }
 
@@ -50,14 +76,16 @@ class PrismaManager {
       DateTime: 'TIMESTAMP',
       Json: 'JSONB',
       UUID: 'UUID',
+      Decimal: 'DECIMAL(12,2)',
     };
 
     const prismaDmmf = (Prisma as any).dmmf;
     const migrations: string[] = [];
     if (prismaDmmf && prismaDmmf.datamodel && prismaDmmf.datamodel.models) {
       const models = prismaDmmf.datamodel.models as any[];
+      const PUBLIC_ONLY_MODELS = ['Tenant', 'User', 'Invitation'];
       for (const model of models) {
-        if (['Tenant', 'User'].includes(model.name)) continue;
+        if (PUBLIC_ONLY_MODELS.includes(model.name)) continue;
         const fields: string[] = [];
         for (const field of model.fields as any[]) {
           if (field.kind !== 'scalar') continue;
@@ -86,6 +114,7 @@ class PrismaManager {
 }
 
 export const prisma = PrismaManager.getInstance();
+export const getTenantClientById = PrismaManager.getTenantClientById;
 export const getTenantClient = PrismaManager.getTenantClient;
 export const createTenantSchema = PrismaManager.createTenantSchema;
 export const migrateTenantSchema = PrismaManager.migrateTenantSchema;

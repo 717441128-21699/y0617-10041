@@ -1,6 +1,6 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { prisma } from '../lib/prisma';
+import { prisma, getTenantClientById } from '../lib/prisma';
 import { config } from '../config';
 import { LoginInput, AuthTokens, JwtPayload, User, AuditAction } from '@saas/shared';
 import { AuditService } from './audit.service';
@@ -28,13 +28,9 @@ export class AuthService {
     let permissions: string[] = [];
 
     if (tenantId) {
-      const membership = await prisma.tenantMember.findUnique({
-        where: {
-          tenantId_userId: {
-            tenantId,
-            userId: user.id,
-          },
-        },
+      const tenantPrisma = await getTenantClientById(tenantId);
+      const membership = await tenantPrisma.tenantMember.findUnique({
+        where: { userId: user.id },
         include: {
           role: true,
         },
@@ -92,7 +88,7 @@ export class AuthService {
         status: user.status as any,
         emailVerified: user.emailVerified,
         createdAt: user.createdAt,
-        lastLoginAt: user.lastLoginAt,
+        lastLoginAt: user.lastLoginAt || undefined,
       },
       tenantId,
       role,
@@ -147,31 +143,52 @@ export class AuthService {
     permissions: string[];
     subdomain: string;
   }>> {
-    const memberships = await prisma.tenantMember.findMany({
-      where: { userId },
-      include: {
-        tenant: {
-          select: {
-            id: true,
-            name: true,
-            subdomain: true,
-          },
-        },
-        role: {
-          select: {
-            name: true,
-            permissions: true,
-          },
-        },
+    const allTenants = await prisma.tenant.findMany({
+      select: {
+        id: true,
+        name: true,
+        subdomain: true,
+        schemaName: true,
       },
     });
 
-    return memberships.map((m: any) => ({
-      tenantId: m.tenantId,
-      tenantName: m.tenant.name,
-      role: m.role.name,
-      permissions: m.role.permissions,
-      subdomain: m.tenant.subdomain,
-    }));
+    const results: Array<{
+      tenantId: string;
+      tenantName: string;
+      role: string;
+      permissions: string[];
+      subdomain: string;
+    }> = [];
+
+    for (const tenant of allTenants) {
+      try {
+        const tenantPrisma = await getTenantClientById(tenant.id);
+        const membership = await tenantPrisma.tenantMember.findUnique({
+          where: { userId },
+          include: {
+            role: {
+              select: {
+                name: true,
+                permissions: true,
+              },
+            },
+          },
+        });
+
+        if (membership && membership.role) {
+          results.push({
+            tenantId: tenant.id,
+            tenantName: tenant.name,
+            role: membership.role.name,
+            permissions: membership.role.permissions,
+            subdomain: tenant.subdomain,
+          });
+        }
+      } catch (e) {
+        // skip tenants without valid schema
+      }
+    }
+
+    return results;
   }
 }

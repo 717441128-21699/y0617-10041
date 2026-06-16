@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { prisma } from '../lib/prisma';
+import { prisma, getTenantClientById } from '../lib/prisma';
 import EmailService from './email.service';
 import { AuditService } from './audit.service';
 import { InviteMemberInput, AuditAction, PaginatedResponse } from '@saas/shared';
@@ -13,23 +13,25 @@ export class MemberService {
     invitedBy: string,
     inviterName: string
   ): Promise<{ invitationId: string; token: string }> {
-    const role = await prisma.role.findFirst({
-      where: {
-        id: input.roleId,
-        tenantId,
-      },
+    const tenantPrisma = await getTenantClientById(tenantId);
+
+    const role = await tenantPrisma.role.findUnique({
+      where: { id: input.roleId },
     });
 
     if (!role) {
       throw new Error('Invalid role');
     }
 
-    const existingMember = await prisma.tenantMember.findFirst({
-      where: {
-        tenantId,
-        user: { email: input.email },
-      },
-    });
+    const inviter = await prisma.user.findUnique({ where: { id: invitedBy } });
+
+    const existingPublicUser = await prisma.user.findUnique({ where: { email: input.email } });
+    let existingMember: any = null;
+    if (existingPublicUser) {
+      existingMember = await tenantPrisma.tenantMember.findUnique({
+        where: { userId: existingPublicUser.id },
+      });
+    }
 
     if (existingMember) {
       throw new Error('User is already a member of this tenant');
@@ -63,7 +65,7 @@ export class MemberService {
         tenantId,
         userId: invitedBy,
         action: AuditAction.MEMBER_INVITED,
-        actorEmail: inviterName,
+        actorEmail: inviter?.email || inviterName,
         targetType: 'member',
         metadata: { email: input.email, role: role.name },
       });
@@ -91,12 +93,11 @@ export class MemberService {
       inviterName
     );
 
-    const inviter = await prisma.user.findUnique({ where: { id: invitedBy } });
     await AuditService.log({
       tenantId,
       userId: invitedBy,
       action: AuditAction.MEMBER_INVITED,
-      actorEmail: inviter?.email || '',
+      actorEmail: inviter?.email || inviterName,
       targetType: 'member',
       metadata: { email: input.email, role: role.name },
     });
@@ -109,12 +110,9 @@ export class MemberService {
 
     const invitation = await prisma.invitation.findUnique({
       where: { id: invitationId },
-      include: { tenant: true },
     });
 
-    if (!invitation) {
-      throw new Error('Invalid invitation');
-    }
+    if (!invitation) throw new Error('Invalid invitation');
 
     if (invitation.status !== 'PENDING') {
       throw new Error('Invitation has already been used or expired');
@@ -127,6 +125,8 @@ export class MemberService {
       });
       throw new Error('Invitation has expired');
     }
+
+    const tenantPrisma = await getTenantClientById(invitation.tenantId);
 
     const existingUser = await prisma.user.findUnique({
       where: { email: invitation.email },
@@ -156,19 +156,13 @@ export class MemberService {
       userId = user.id;
     }
 
-    const existingMember = await prisma.tenantMember.findUnique({
-      where: {
-        tenantId_userId: {
-          tenantId: invitation.tenantId,
-          userId,
-        },
-      },
+    const existingMember = await tenantPrisma.tenantMember.findUnique({
+      where: { userId },
     });
 
     if (!existingMember) {
-      await prisma.tenantMember.create({
+      await tenantPrisma.tenantMember.create({
         data: {
-          tenantId: invitation.tenantId,
           userId,
           roleId: invitation.roleId,
           invitedBy: invitation.invitedBy,
@@ -189,18 +183,10 @@ export class MemberService {
     page: number = 1,
     limit: number = 20
   ): Promise<PaginatedResponse<any>> {
+    const tenantPrisma = await getTenantClientById(tenantId);
     const [members, total] = await Promise.all([
-      prisma.tenantMember.findMany({
-        where: { tenantId },
+      tenantPrisma.tenantMember.findMany({
         include: {
-          user: {
-            select: {
-              id: true,
-              email: true,
-              name: true,
-              status: true,
-            },
-          },
           role: {
             select: {
               id: true,
@@ -211,11 +197,24 @@ export class MemberService {
         skip: (page - 1) * limit,
         take: limit,
       }),
-      prisma.tenantMember.count({ where: { tenantId } }),
+      tenantPrisma.tenantMember.count(),
     ]);
 
+    const userIds = members.map((m: any) => m.userId).filter(Boolean);
+    const users = await prisma.user.findMany({
+      where: { id: { in: userIds } },
+      select: { id: true, email: true, name: true, status: true },
+    });
+    const userMap: Record<string, any> = {};
+    for (const u of users) userMap[u.id] = u;
+
+    const data = members.map((m: any) => ({
+      ...m,
+      user: userMap[m.userId] || { id: m.userId, email: '', name: '', status: '' },
+    }));
+
     return {
-      data: members,
+      data,
       total,
       page,
       limit,
@@ -229,22 +228,18 @@ export class MemberService {
     roleId: string,
     updatedBy: string
   ): Promise<void> {
-    const role = await prisma.role.findFirst({
-      where: {
-        id: roleId,
-        tenantId,
-      },
+    const tenantPrisma = await getTenantClientById(tenantId);
+
+    const role = await tenantPrisma.role.findUnique({
+      where: { id: roleId },
     });
 
     if (!role) {
       throw new Error('Invalid role');
     }
 
-    await prisma.tenantMember.updateMany({
-      where: {
-        id: memberId,
-        tenantId,
-      },
+    await tenantPrisma.tenantMember.update({
+      where: { id: memberId },
       data: { roleId },
     });
 
@@ -261,12 +256,11 @@ export class MemberService {
   }
 
   static async removeMember(tenantId: string, memberId: string, removedBy: string): Promise<void> {
-    const member = await prisma.tenantMember.findFirst({
-      where: {
-        id: memberId,
-        tenantId,
-      },
-      include: { user: true, role: true },
+    const tenantPrisma = await getTenantClientById(tenantId);
+
+    const member = await tenantPrisma.tenantMember.findUnique({
+      where: { id: memberId },
+      include: { role: true },
     });
 
     if (!member) {
@@ -277,11 +271,10 @@ export class MemberService {
       throw new Error('Cannot remove the owner');
     }
 
-    await prisma.tenantMember.deleteMany({
-      where: {
-        id: memberId,
-        tenantId,
-      },
+    const removedUser = await prisma.user.findUnique({ where: { id: member.userId } });
+
+    await tenantPrisma.tenantMember.delete({
+      where: { id: memberId },
     });
 
     const user = await prisma.user.findUnique({ where: { id: removedBy } });
@@ -292,31 +285,30 @@ export class MemberService {
       actorEmail: user?.email || '',
       targetType: 'member',
       targetId: memberId,
-      metadata: { removedEmail: member.user.email, roleName: member.role.name },
+      metadata: { removedEmail: removedUser?.email || '', roleName: member.role.name },
     });
   }
 
   static async getRoles(tenantId: string): Promise<any[]> {
-    return prisma.role.findMany({
-      where: { tenantId },
+    const tenantPrisma = await getTenantClientById(tenantId);
+    return tenantPrisma.role.findMany({
       orderBy: { isSystem: 'desc' },
     });
   }
 
   static async createRole(tenantId: string, name: string, description: string | undefined, permissions: string[], createdBy: string): Promise<any> {
-    const existingRole = await prisma.role.findUnique({
-      where: {
-        tenantId_name: { tenantId, name },
-      },
+    const tenantPrisma = await getTenantClientById(tenantId);
+
+    const existingRole = await tenantPrisma.role.findUnique({
+      where: { name },
     });
 
     if (existingRole) {
       throw new Error('Role already exists');
     }
 
-    const role = await prisma.role.create({
+    const role = await tenantPrisma.role.create({
       data: {
-        tenantId,
         name,
         description,
         permissions,

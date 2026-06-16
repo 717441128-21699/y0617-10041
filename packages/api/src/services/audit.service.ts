@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { prisma } from '../lib/prisma';
+import { getTenantClientById } from '../lib/prisma';
 import { AuditAction, AuditLogFilter, PaginatedResponse } from '@saas/shared';
 
 interface CreateAuditLogParams {
@@ -21,23 +21,27 @@ export class AuditService {
     let userAgent: string | undefined;
 
     if (req) {
-      ipAddress = req.ip || req.headers['x-forwarded-for'] as string || req.socket.remoteAddress;
+      ipAddress = req.ip || (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress;
       userAgent = req.headers['user-agent'];
     }
 
-    await prisma.auditLog.create({
-      data: {
-        tenantId,
-        userId,
-        action: action as any,
-        actorEmail,
-        targetType,
-        targetId,
-        metadata: metadata || {},
-        ipAddress,
-        userAgent,
-      },
-    });
+    try {
+      const tenantPrisma = await getTenantClientById(tenantId);
+      await tenantPrisma.auditLog.create({
+        data: {
+          userId,
+          action: action as any,
+          actorEmail,
+          targetType,
+          targetId,
+          metadata: (metadata || {}) as any,
+          ipAddress,
+          userAgent,
+        },
+      });
+    } catch (err) {
+      console.error('[AuditService.log] failed:', err);
+    }
   }
 
   static async getLogs(
@@ -46,7 +50,8 @@ export class AuditService {
     page: number = 1,
     limit: number = 20
   ): Promise<PaginatedResponse<any>> {
-    const where: any = { tenantId };
+    const tenantPrisma = await getTenantClientById(tenantId);
+    const where: any = {};
 
     if (filter.userId) {
       where.userId = filter.userId;
@@ -71,13 +76,13 @@ export class AuditService {
     }
 
     const [logs, total] = await Promise.all([
-      prisma.auditLog.findMany({
+      tenantPrisma.auditLog.findMany({
         where,
         orderBy: { timestamp: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
       }),
-      prisma.auditLog.count({ where }),
+      tenantPrisma.auditLog.count({ where }),
     ]);
 
     return {
