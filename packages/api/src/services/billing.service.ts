@@ -90,7 +90,7 @@ export class BillingService {
       },
     });
 
-    const totalCalls = usageRecords.reduce((sum, record) => sum + record.count, 0);
+    const totalCalls = usageRecords.reduce((sum: number, record: any) => sum + record.count, 0);
     const billingTier = BILLING_TIERS[tenant.tier];
     const freeCalls = billingTier.freeCalls;
     const billableCalls = Math.max(0, totalCalls - freeCalls);

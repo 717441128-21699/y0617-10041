@@ -33,6 +33,24 @@ export const useAuthStore = create<AuthState>((set) => ({
         user: response.data.user,
         isAuthenticated: true,
       });
+      const meResponse = await api.get<{
+        success: boolean;
+        data: {
+          user: User;
+          tenants: Array<{
+            tenantId: string;
+            tenantName: string;
+            role: string;
+            permissions: string[];
+            subdomain: string;
+          }>;
+        };
+      }>('/auth/me');
+      if (meResponse.success) {
+        set({
+          tenants: meResponse.data.tenants,
+        });
+      }
     }
   },
 

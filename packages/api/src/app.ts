@@ -1,5 +1,6 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
+import { z } from 'zod';
 import { tenantMiddleware, requireTenant } from './middleware/tenant';
 import { authMiddleware } from './middleware/auth';
 import { apiMeterMiddleware } from './middleware/apiMeter';
@@ -8,6 +9,8 @@ import tenantRoutes from './routes/tenant.routes';
 import billingRoutes from './routes/billing.routes';
 import auditRoutes from './routes/audit.routes';
 import invitationRoutes from './routes/invitation.routes';
+import { TenantService } from './services/tenant.service';
+import { createTenantSchema } from '@saas/shared';
 
 const app = express();
 
@@ -35,34 +38,63 @@ app.get('/health', (req: Request, res: Response) => {
 });
 
 app.use('/api/invitation', invitationRoutes);
-app.use('/api/tenant/register', tenantRoutes);
+app.post('/api/tenant/register', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const input = createTenantSchema.parse(req.body);
+    const result = await TenantService.createTenant(input);
+
+    res.status(201).json({
+      success: true,
+      data: {
+        tenantId: result.tenant.id,
+        subdomain: result.tenant.subdomain,
+        name: result.tenant.name,
+        userId: result.userId,
+      },
+      message: 'Tenant created successfully',
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      res.status(400).json({
+        success: false,
+        error: 'Validation error',
+        details: error.errors,
+      });
+      return;
+    }
+
+    res.status(400).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to create tenant',
+    });
+  }
+});
 
 app.use(tenantMiddleware);
 app.use(requireTenant);
 app.use(apiMeterMiddleware);
 
-app.use('/api/auth', authRoutes);
-app.use('/api/tenant', authMiddleware, tenantRoutes);
-app.use('/api/billing', authMiddleware, billingRoutes);
-app.use('/api/audit', authMiddleware, auditRoutes);
-
 app.get('/api/theme', async (req: Request, res: Response) => {
-  if (!req.tenant) {
-    res.status(404).json({
-      success: false,
-      error: 'Tenant not found',
-    });
-    return;
-  }
-
   res.json({
     success: true,
     data: {
-      theme: req.tenant.theme,
-      tenantName: req.tenant.name,
+      theme: req.tenant!.theme,
+      tenantName: req.tenant!.name,
     },
   });
 });
+
+app.use('/api/auth/me', authMiddleware);
+app.use('/api/auth', authRoutes);
+app.use('/api/tenant', authMiddleware, (req: Request, res: Response, next: NextFunction) => {
+  if (req.path === '/register') {
+    res.status(405).json({ success: false, error: 'Method not allowed on protected route' });
+    return;
+  }
+  next();
+}, tenantRoutes);
+app.use('/api/billing', authMiddleware, billingRoutes);
+app.use('/api/audit', authMiddleware, auditRoutes);
 
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
   console.error('[Error]', err);

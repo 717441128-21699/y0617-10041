@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { AuthService } from '../services/auth.service';
+import { prisma } from '../lib/prisma';
 import { loginSchema } from '@saas/shared';
 import { z } from 'zod';
 
@@ -73,11 +74,23 @@ router.get('/me', async (req: Request, res: Response): Promise<void> => {
   }
 
   const tenants = await AuthService.getUserTenants(req.user.id);
-  
+  const user = await prisma.user.findUnique({
+    where: { id: req.user.id },
+    select: {
+      id: true,
+      email: true,
+      name: true,
+      status: true,
+      emailVerified: true,
+      createdAt: true,
+      lastLoginAt: true,
+    },
+  });
+
   res.json({
     success: true,
     data: {
-      user: req.user,
+      user,
       tenants,
       currentTenant: req.tenant,
     },

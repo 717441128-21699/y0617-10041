@@ -26,7 +26,7 @@ export class TenantService {
 
     const schemaName = `tenant_${uuidv4().replace(/-/g, '_')}`;
 
-    const result = await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx: any) => {
       const passwordHash = await bcrypt.hash(input.adminPassword, 12);
 
       const user = await tx.user.create({
@@ -98,7 +98,15 @@ export class TenantService {
     const tenant = await prisma.tenant.findUnique({
       where: { id: tenantId },
     });
-    return tenant as Tenant | null;
+    if (!tenant) return null;
+    return {
+      ...tenant,
+      theme: {
+        primaryColor: tenant.primaryColor,
+        secondaryColor: tenant.secondaryColor,
+        logoUrl: tenant.logoUrl,
+      },
+    } as unknown as Tenant;
   }
 
   static async updateTenant(tenantId: string, input: UpdateTenantInput, userId: string): Promise<Tenant> {
@@ -134,7 +142,14 @@ export class TenantService {
       metadata: input,
     });
 
-    return tenant as Tenant;
+    return {
+      ...tenant,
+      theme: {
+        primaryColor: tenant.primaryColor,
+        secondaryColor: tenant.secondaryColor,
+        logoUrl: tenant.logoUrl,
+      },
+    } as unknown as Tenant;
   }
 
   static async getTenantTheme(tenantId: string): Promise<{

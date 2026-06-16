@@ -112,7 +112,7 @@ export async function tenantMiddleware(
     await cacheSet(cacheKey, tenant, TENANT_CACHE_TTL);
   }
 
-  req.tenant = tenant;
+  req.tenant = tenant as NonNullable<typeof req.tenant>;
   next();
 }
 

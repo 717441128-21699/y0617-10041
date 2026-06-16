@@ -14,10 +14,13 @@ export class MemberService {
     inviterName: string
   ): Promise<{ invitationId: string; token: string }> {
     const role = await prisma.role.findUnique({
-      where: { id: input.roleId },
+      where: {
+        id: input.roleId,
+        tenantId,
+      },
     });
 
-    if (!role || role.tenantId !== tenantId) {
+    if (!role) {
       throw new Error('Invalid role');
     }
 
@@ -227,14 +230,17 @@ export class MemberService {
     updatedBy: string
   ): Promise<void> {
     const role = await prisma.role.findUnique({
-      where: { id: roleId },
+      where: {
+        id: roleId,
+        tenantId,
+      },
     });
 
-    if (!role || role.tenantId !== tenantId) {
+    if (!role) {
       throw new Error('Invalid role');
     }
 
-    await prisma.tenantMember.update({
+    await prisma.tenantMember.updateMany({
       where: {
         id: memberId,
         tenantId,
@@ -255,12 +261,15 @@ export class MemberService {
   }
 
   static async removeMember(tenantId: string, memberId: string, removedBy: string): Promise<void> {
-    const member = await prisma.tenantMember.findUnique({
-      where: { id: memberId },
+    const member = await prisma.tenantMember.findFirst({
+      where: {
+        id: memberId,
+        tenantId,
+      },
       include: { user: true, role: true },
     });
 
-    if (!member || member.tenantId !== tenantId) {
+    if (!member) {
       throw new Error('Member not found');
     }
 
@@ -268,8 +277,11 @@ export class MemberService {
       throw new Error('Cannot remove the owner');
     }
 
-    await prisma.tenantMember.delete({
-      where: { id: memberId },
+    await prisma.tenantMember.deleteMany({
+      where: {
+        id: memberId,
+        tenantId,
+      },
     });
 
     const user = await prisma.user.findUnique({ where: { id: removedBy } });
@@ -293,7 +305,9 @@ export class MemberService {
 
   static async createRole(tenantId: string, name: string, description: string | undefined, permissions: string[], createdBy: string): Promise<any> {
     const existingRole = await prisma.role.findUnique({
-      where: { tenantId_name: { tenantId, name } },
+      where: {
+        tenantId_name: { tenantId, name },
+      },
     });
 
     if (existingRole) {

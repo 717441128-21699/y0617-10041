@@ -16,10 +16,12 @@ class PrismaManager {
       return PrismaManager.tenantClients.get(schemaName)!;
     }
 
+    const baseUrl = process.env.DATABASE_URL || '';
+    const schemaUrl = baseUrl.replace('schema=public', `schema=${schemaName}`);
     const client = new PrismaClient({
       datasources: {
         db: {
-          url: `${process.env.DATABASE_URL?.replace('schema=public', `schema=${schemaName}`) || ''},
+          url: schemaUrl,
         },
       },
     });
@@ -40,21 +42,34 @@ class PrismaManager {
 
   static async migrateTenantSchema(schemaName: string): Promise<void> {
     const prisma = await PrismaManager.getTenantClient(schemaName);
-    const migrations = Prisma.dmmf.datamodel.models
-      .filter(m => !['Tenant', 'User'].includes(m.name))
-      .map(model => {
-        const fields = model.fields
-          .map(field => {
-            let type = '';
-            switch (field.kind === 'scalar' ? field.type : 'UUID');
-            if (field.isId) type += ' PRIMARY KEY';
-            if (field.isRequired && !field.isId) type += ' NOT NULL';
-            if (field.hasDefaultValue) type += ` DEFAULT ${field.default?.toString()}`;
-            return `"${field.name}" ${type}`;
-          })
-          .join(', ');
-        return `CREATE TABLE IF NOT EXISTS "${schemaName}"."${model.name.toLowerCase()}" (${fields})`;
-      });
+    const typeMap: Record<string, string> = {
+      String: 'VARCHAR(255)',
+      Boolean: 'BOOLEAN',
+      Int: 'INTEGER',
+      Float: 'FLOAT',
+      DateTime: 'TIMESTAMP',
+      Json: 'JSONB',
+      UUID: 'UUID',
+    };
+
+    const prismaDmmf = (Prisma as any).dmmf;
+    const migrations: string[] = [];
+    if (prismaDmmf && prismaDmmf.datamodel && prismaDmmf.datamodel.models) {
+      const models = prismaDmmf.datamodel.models as any[];
+      for (const model of models) {
+        if (['Tenant', 'User'].includes(model.name)) continue;
+        const fields: string[] = [];
+        for (const field of model.fields as any[]) {
+          if (field.kind !== 'scalar') continue;
+          const dbType = typeMap[field.type] || 'VARCHAR(255)';
+          const parts: string[] = [`"${field.name}" ${dbType}`];
+          if (field.isId) parts.push('PRIMARY KEY');
+          if (field.isRequired && !field.isId) parts.push('NOT NULL');
+          fields.push(parts.join(' '));
+        }
+        migrations.push(`CREATE TABLE IF NOT EXISTS "${schemaName}"."${model.name.toLowerCase()}" (${fields.join(', ')})`);
+      }
+    }
 
     for (const migration of migrations) {
       await prisma.$executeRawUnsafe(migration);

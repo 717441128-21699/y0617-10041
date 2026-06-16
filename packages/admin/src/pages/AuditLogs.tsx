@@ -42,16 +42,17 @@ export default function AuditLogs() {
         const response = await api.get<{
           success: boolean;
           data: {
-            logs: AuditLogWithUser[];
+            data: AuditLogWithUser[];
             total: number;
             page: number;
             limit: number;
+            totalPages: number;
           };
         }>(`/audit?${params.toString()}`);
 
         if (response.success) {
-          setLogs(response.data.logs);
-          setTotal(response.data.total);
+          setLogs(Array.isArray(response.data.data) ? response.data.data : []);
+          setTotal(response.data.total || 0);
         }
       } catch (error) {
         console.error('Failed to fetch audit logs:', error);

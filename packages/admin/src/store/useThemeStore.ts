@@ -54,7 +54,7 @@ export const useThemeStore = create<ThemeState>((set) => ({
   },
 }));
 
-function applyCssVariables(theme: { primaryColor: string; secondaryColor: string }) {
+function applyCssVariables(theme: { primaryColor: string; secondaryColor: string; logoUrl?: string }) {
   const root = document.documentElement;
   root.style.setProperty('--color-primary', theme.primaryColor);
   root.style.setProperty('--color-secondary', theme.secondaryColor);

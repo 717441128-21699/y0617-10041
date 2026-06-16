@@ -25,15 +25,20 @@ export default function TenantRegister() {
     setLoading(true);
 
     try {
-      const response = await api.post<{ success: boolean; data: { tenant: any; userId: string } }>(
-        'http://localhost:3000/api/tenant/register',
+      const response = await api.post<{ success: boolean; data: { tenantId: string; subdomain: string; name: string; userId: string } }>(
+        '/tenant/register',
         formData
       );
       
       if (response.success) {
         setSuccess(true);
+        const protocol = window.location.protocol;
+        const host = window.location.hostname;
+        const port = window.location.port ? `:${window.location.port}` : '';
+        const loginUrl = `${protocol}//${formData.subdomain}.${host}${port}/login`;
+        
         setTimeout(() => {
-          window.location.href = `http://${formData.subdomain}.localhost:5173/login`;
+          window.location.href = loginUrl;
         }, 2000);
       }
     } catch (err: any) {

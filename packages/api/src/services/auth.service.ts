@@ -56,14 +56,14 @@ export class AuthService {
       permissions,
     };
 
-    const accessToken = jwt.sign(payload, config.jwt.secret, {
-      expiresIn: config.jwt.expiresIn,
+    const accessToken = jwt.sign(payload as object, config.jwt.secret as jwt.Secret, {
+      expiresIn: config.jwt.expiresIn as jwt.SignOptions['expiresIn'],
     });
 
     const refreshToken = jwt.sign(
       { userId: user.id, type: 'refresh' },
-      config.jwt.secret,
-      { expiresIn: '30d' }
+      config.jwt.secret as jwt.Secret,
+      { expiresIn: '30d' as jwt.SignOptions['expiresIn'] }
     );
 
     await prisma.user.update({
@@ -120,14 +120,14 @@ export class AuthService {
         email: user.email,
       };
 
-      const accessToken = jwt.sign(payload, config.jwt.secret, {
-        expiresIn: config.jwt.expiresIn,
+      const accessToken = jwt.sign(payload as object, config.jwt.secret as jwt.Secret, {
+        expiresIn: config.jwt.expiresIn as jwt.SignOptions['expiresIn'],
       });
 
       const newRefreshToken = jwt.sign(
         { userId: user.id, type: 'refresh' },
-        config.jwt.secret,
-        { expiresIn: '30d' }
+        config.jwt.secret as jwt.Secret,
+        { expiresIn: '30d' as jwt.SignOptions['expiresIn'] }
       );
 
       return {
@@ -166,7 +166,7 @@ export class AuthService {
       },
     });
 
-    return memberships.map(m => ({
+    return memberships.map((m: any) => ({
       tenantId: m.tenantId,
       tenantName: m.tenant.name,
       role: m.role.name,

@@ -62,11 +62,8 @@ export default function Settings() {
     try {
       const updateData: any = {
         name: formData.name,
+        customDomain: formData.customDomain || null,
       };
-
-      if (formData.customDomain) {
-        updateData.customDomain = formData.customDomain || null;
-      }
 
       updateData.theme = {
         primaryColor: formData.primaryColor,

@@ -47,12 +47,14 @@ export default function Billing() {
       try {
         const [usageRes, invoicesRes, tenantRes] = await Promise.all([
           api.get<{ success: boolean; data: UsageData }>('/billing/usage'),
-          api.get<{ success: boolean; data: { invoices: InvoiceData[]; total: number } }>('/billing/invoices'),
+          api.get<{ success: boolean; data: { data: InvoiceData[]; total: number; totalPages: number } }>('/billing/invoices'),
           api.get<{ success: boolean; data: TenantData }>('/tenant'),
         ]);
 
         if (usageRes.success) setUsage(usageRes.data);
-        if (invoicesRes.success) setInvoices(invoicesRes.data.invoices);
+        if (invoicesRes.success) {
+          setInvoices(Array.isArray(invoicesRes.data.data) ? invoicesRes.data.data : []);
+        }
         if (tenantRes.success) {
           setTenant(tenantRes.data);
           setSelectedTier(tenantRes.data.tier);
@@ -218,7 +220,7 @@ export default function Billing() {
               <div key={i} className="h-12 bg-gray-200 rounded"></div>
             ))}
           </div>
-        ) : invoices.length > 0 ? (
+        ) : Array.isArray(invoices) && invoices.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
@@ -233,22 +235,22 @@ export default function Billing() {
               </thead>
               <tbody>
                 {invoices.map((invoice) => (
-                  <tr key={invoice.id} className="border-b border-gray-100 hover:bg-gray-50">
+                  <tr key={invoice?.id || Math.random()} className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="py-3 px-4 text-sm font-mono text-gray-900">
-                      #{invoice.id.slice(0, 8)}
+                      #{(invoice?.id || '').slice(0, 8) || '-'}
                     </td>
                     <td className="py-3 px-4 text-sm text-gray-600">
-                      {formatDate(invoice.periodStart)} - {formatDate(invoice.periodEnd)}
+                      {invoice?.periodStart ? formatDate(invoice.periodStart) : '-'} - {invoice?.periodEnd ? formatDate(invoice.periodEnd) : '-'}
                     </td>
                     <td className="py-3 px-4 text-sm text-gray-600">
-                      {invoice.totalCalls.toLocaleString()}
+                      {(invoice?.totalCalls || 0).toLocaleString()}
                     </td>
                     <td className="py-3 px-4 text-sm font-medium text-gray-900">
-                      ${invoice.amount.toFixed(2)}
+                      ${(invoice?.amount || 0).toFixed(2)}
                     </td>
-                    <td className="py-3 px-4">{getStatusBadge(invoice.status)}</td>
+                    <td className="py-3 px-4">{invoice?.status ? getStatusBadge(invoice.status) : '-'}</td>
                     <td className="py-3 px-4 text-sm text-gray-600">
-                      {formatDate(invoice.createdAt)}
+                      {invoice?.createdAt ? formatDate(invoice.createdAt) : '-'}
                     </td>
                   </tr>
                 ))}

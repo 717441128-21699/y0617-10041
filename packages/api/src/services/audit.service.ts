@@ -1,4 +1,4 @@
-import { Request } from 'express';
+import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { AuditAction, AuditLogFilter, PaginatedResponse } from '@saas/shared';
 
