@@ -13,7 +13,7 @@ export class MemberService {
     invitedBy: string,
     inviterName: string
   ): Promise<{ invitationId: string; token: string }> {
-    const role = await prisma.role.findUnique({
+    const role = await prisma.role.findFirst({
       where: {
         id: input.roleId,
         tenantId,
@@ -229,7 +229,7 @@ export class MemberService {
     roleId: string,
     updatedBy: string
   ): Promise<void> {
-    const role = await prisma.role.findUnique({
+    const role = await prisma.role.findFirst({
       where: {
         id: roleId,
         tenantId,

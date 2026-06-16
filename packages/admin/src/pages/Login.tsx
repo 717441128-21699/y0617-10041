@@ -95,7 +95,7 @@ export default function Login() {
 
         <div className="text-center">
           <a
-            href="http://localhost:5173"
+            href={`http://${window.location.hostname}:5173`}
             className="text-sm text-gray-600 hover:text-primary"
             style={{ color: primaryColor }}
           >

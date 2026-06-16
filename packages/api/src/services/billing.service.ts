@@ -1,6 +1,6 @@
 import { prisma } from '../lib/prisma';
-import { redis, cacheSet, cacheGet } from '../lib/redis';
-import { BILLING_TIERS, MonthlyUsage, Invoice, InvoiceItem } from '@saas/shared';
+import { redis, cacheSet, cacheGet, cacheDel } from '../lib/redis';
+import { BILLING_TIERS, getBillingTier, MonthlyUsage, Invoice, InvoiceItem } from '@saas/shared';
 import EmailService from './email.service';
 import { AuditService } from './audit.service';
 import { AuditAction } from '@saas/shared';
@@ -19,10 +19,10 @@ export class BillingService {
     redis.expire(monthKey, 60 * 60 * 24 * 35);
     redis.expire(dailyKey, 60 * 60 * 24 * 2);
 
-    const billingTier = BILLING_TIERS[tier];
+    const billingTier = getBillingTier(tier);
     const freeCalls = billingTier.freeCalls;
 
-    if (tier === 'free' && monthlyCount > freeCalls) {
+    if ((tier === 'free' || tier === 'FREE') && monthlyCount > freeCalls) {
       await AuditService.log({
         tenantId,
         action: AuditAction.API_EXCEEDED_QUOTA,
@@ -91,7 +91,7 @@ export class BillingService {
     });
 
     const totalCalls = usageRecords.reduce((sum: number, record: any) => sum + record.count, 0);
-    const billingTier = BILLING_TIERS[tenant.tier];
+    const billingTier = getBillingTier(tenant.tier);
     const freeCalls = billingTier.freeCalls;
     const billableCalls = Math.max(0, totalCalls - freeCalls);
 
@@ -111,8 +111,8 @@ export class BillingService {
   }
 
   static calculateCost(billableCalls: number, tier: string): number {
-    const billingTier = BILLING_TIERS[tier];
-    if (billingTier.tiers.length === 0 || billableCalls === 0) return 0;
+    const billingTier = getBillingTier(tier);
+    if (!billingTier || billingTier.tiers.length === 0 || billableCalls === 0) return 0;
 
     let remainingCalls = billableCalls;
     let totalCost = 0;
@@ -182,7 +182,7 @@ export class BillingService {
       });
 
       if (usage.billableCalls > 0) {
-        const billingTier = BILLING_TIERS[tenant.tier];
+        const billingTier = getBillingTier(tenant.tier);
         const items: Array<{ description: string; quantity: number; unitPrice: number; amount: number }> = [];
         let remainingCalls = usage.billableCalls;
 
@@ -270,15 +270,22 @@ export class BillingService {
   }
 
   static async updateTier(tenantId: string, newTier: string, updatedBy: string): Promise<void> {
-    const validTiers = Object.keys(BILLING_TIERS);
-    if (!validTiers.includes(newTier)) {
+    const tierUpper = newTier.toUpperCase();
+    const validTiers = ['FREE', 'BASIC', 'PRO', 'ENTERPRISE'];
+    if (!validTiers.includes(tierUpper)) {
       throw new Error('Invalid tier');
     }
 
-    await prisma.tenant.update({
+    const tenant = await prisma.tenant.update({
       where: { id: tenantId },
-      data: { tier: newTier as any },
+      data: { tier: tierUpper as any },
     });
+
+    await cacheDel(`tenant:${tenant.subdomain}`);
+    if (tenant.customDomain) {
+      await cacheDel(`tenant:${tenant.customDomain}`);
+    }
+    await cacheDel(`monthly_usage:${tenantId}:${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`);
 
     const user = await prisma.user.findUnique({ where: { id: updatedBy } });
     await AuditService.log({
@@ -287,7 +294,7 @@ export class BillingService {
       action: AuditAction.BILLING_PLAN_CHANGED,
       actorEmail: user?.email || '',
       targetType: 'billing',
-      metadata: { newTier },
+      metadata: { newTier: tierUpper },
     });
   }
 }

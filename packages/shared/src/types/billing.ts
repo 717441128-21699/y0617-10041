@@ -9,7 +9,7 @@ export interface BillingTier {
   }>;
 }
 
-export const BILLING_TIERS: Record<string, BillingTier> = {
+const _BILLING_TIERS: Record<string, BillingTier> = {
   free: {
     name: 'Free',
     freeCalls: 1000,
@@ -45,6 +45,20 @@ export const BILLING_TIERS: Record<string, BillingTier> = {
     ],
   },
 };
+
+export const BILLING_TIERS: Record<string, BillingTier> = {
+  ..._BILLING_TIERS,
+  FREE: _BILLING_TIERS.free,
+  BASIC: _BILLING_TIERS.basic,
+  PRO: _BILLING_TIERS.pro,
+  ENTERPRISE: _BILLING_TIERS.enterprise,
+};
+
+export const DEFAULT_BILLING_TIER: BillingTier = _BILLING_TIERS.free;
+
+export function getBillingTier(tier: string): BillingTier {
+  return BILLING_TIERS[tier] || BILLING_TIERS[tier.toLowerCase()] || DEFAULT_BILLING_TIER;
+}
 
 export interface ApiUsage {
   tenantId: string;

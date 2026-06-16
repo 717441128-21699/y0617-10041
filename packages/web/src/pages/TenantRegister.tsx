@@ -34,8 +34,7 @@ export default function TenantRegister() {
         setSuccess(true);
         const protocol = window.location.protocol;
         const host = window.location.hostname;
-        const port = window.location.port ? `:${window.location.port}` : '';
-        const loginUrl = `${protocol}//${formData.subdomain}.${host}${port}/login`;
+        const loginUrl = `${protocol}//${formData.subdomain}.${host}:5174/login`;
         
         setTimeout(() => {
           window.location.href = loginUrl;

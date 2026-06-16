@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { useThemeStore } from '../store/useThemeStore';
 import { useAuthStore } from '../store/useAuthStore';
-import { BILLING_TIERS, BillingTier } from '@saas/shared';
+import { BILLING_TIERS, BillingTier, getBillingTier } from '@saas/shared';
 
 interface UsageData {
   month: string;
@@ -57,7 +57,7 @@ export default function Billing() {
         }
         if (tenantRes.success) {
           setTenant(tenantRes.data);
-          setSelectedTier(tenantRes.data.tier);
+          setSelectedTier(typeof tenantRes.data.tier === 'string' ? tenantRes.data.tier.toLowerCase() : 'free');
         }
       } catch (error) {
         console.error('Failed to fetch billing data:', error);
@@ -144,12 +144,12 @@ export default function Billing() {
             <div>
               <div className="flex items-center space-x-3">
                 <h4 className="text-xl font-bold" style={{ color: primaryColor }}>
-                  {BILLING_TIERS[tenant.tier]?.name || tenant.tier}
+                  {getBillingTier(tenant.tier).name}
                 </h4>
                 <span className="badge badge-success">Active</span>
               </div>
               <p className="text-gray-600 mt-2">
-                {BILLING_TIERS[tenant.tier]?.freeCalls.toLocaleString() || 0} free API calls per month
+                {getBillingTier(tenant.tier).freeCalls.toLocaleString()} free API calls per month
               </p>
             </div>
             {usage && (
@@ -295,7 +295,7 @@ export default function Billing() {
                   >
                     <div className="flex justify-between items-start mb-2">
                       <h4 className="font-semibold text-gray-900">{tier.name}</h4>
-                      {key === tenant?.tier && (
+                      {key === tenant?.tier?.toLowerCase() && (
                         <span className="badge badge-success text-xs">Current</span>
                       )}
                     </div>

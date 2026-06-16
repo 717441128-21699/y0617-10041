@@ -112,13 +112,13 @@ export class TenantService {
   static async updateTenant(tenantId: string, input: UpdateTenantInput, userId: string): Promise<Tenant> {
     const updateData: any = {};
 
-    if (input.name) updateData.name = input.name;
-    if (input.customDomain !== undefined) updateData.customDomain = input.customDomain;
+    if (input.name !== undefined) updateData.name = input.name;
+    if (input.customDomain !== undefined) updateData.customDomain = input.customDomain || null;
     if (input.settings) updateData.settings = input.settings;
     if (input.theme) {
-      if (input.theme.primaryColor) updateData.primaryColor = input.theme.primaryColor;
-      if (input.theme.secondaryColor) updateData.secondaryColor = input.theme.secondaryColor;
-      if (input.theme.logoUrl) updateData.logoUrl = input.theme.logoUrl;
+      if (input.theme.primaryColor !== undefined) updateData.primaryColor = input.theme.primaryColor;
+      if (input.theme.secondaryColor !== undefined) updateData.secondaryColor = input.theme.secondaryColor;
+      if (input.theme.logoUrl !== undefined) updateData.logoUrl = input.theme.logoUrl || '/default-logo.png';
     }
 
     const tenant = await prisma.tenant.update({

@@ -24,20 +24,18 @@ declare global {
 
 const TENANT_CACHE_TTL = 300;
 
-export function extractSubdomain(host: string): string | null {
-  const baseDomain = config.baseDomain;
-  const hostParts = host.split(':')[0];
-  
-  if (hostParts === baseDomain) {
+export function extractSubdomain(host: string, baseDomain: string): string | null {
+  const hostname = host.split(':')[0];
+
+  if (hostname === baseDomain) {
     return null;
   }
 
-  if (hostParts.endsWith(`.${baseDomain}`)) {
-    const subdomain = hostParts.replace(`.${baseDomain}`, '');
-    return subdomain;
+  if (hostname.endsWith(`.${baseDomain}`)) {
+    return hostname.slice(0, -(baseDomain.length + 1));
   }
 
-  return hostParts;
+  return hostname;
 }
 
 export async function tenantMiddleware(
@@ -45,8 +43,8 @@ export async function tenantMiddleware(
   res: Response,
   next: NextFunction
 ): Promise<void> {
-  const host = req.headers.host || '';
-  const subdomain = extractSubdomain(host);
+  const host = (req.headers['x-forwarded-host'] as string) || req.headers.host || '';
+  const subdomain = extractSubdomain(host, config.baseDomain);
 
   if (!subdomain) {
     res.status(400).json({
