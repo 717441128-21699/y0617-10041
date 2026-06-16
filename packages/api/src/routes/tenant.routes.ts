@@ -2,8 +2,7 @@ import { Router, Request, Response } from 'express';
 import { TenantService } from '../services/tenant.service';
 import { MemberService } from '../services/member.service';
 import { requirePermission, requireRole } from '../middleware/auth';
-import { auditLog } from '../services/audit.service';
-import { createTenantSchema, updateTenantSchema, inviteMemberSchema, AuditAction } from '@saas/shared';
+import { createTenantSchema, updateTenantSchema, inviteMemberSchema } from '@saas/shared';
 import { z } from 'zod';
 
 const router = Router();
@@ -59,7 +58,7 @@ router.get('/', requirePermission('tenant:read'), async (req: Request, res: Resp
   }
 });
 
-router.put('/', requirePermission('tenant:update'), auditLog(AuditAction.TENANT_UPDATED, 'tenant'), async (req: Request, res: Response): Promise<void> => {
+router.put('/', requirePermission('tenant:update'), async (req: Request, res: Response): Promise<void> => {
   try {
     if (!req.tenant || !req.user) {
       res.status(400).json({
@@ -94,7 +93,7 @@ router.put('/', requirePermission('tenant:update'), auditLog(AuditAction.TENANT_
   }
 });
 
-router.post('/members/invite', requirePermission('member:invite'), auditLog(AuditAction.MEMBER_INVITED, 'member'), async (req: Request, res: Response): Promise<void> => {
+router.post('/members/invite', requirePermission('member:invite'), async (req: Request, res: Response): Promise<void> => {
   try {
     if (!req.tenant || !req.user) {
       res.status(400).json({
@@ -161,7 +160,7 @@ router.get('/members', requirePermission('member:read'), async (req: Request, re
   }
 });
 
-router.put('/members/:id/role', requirePermission('member:role:update'), auditLog(AuditAction.MEMBER_ROLE_UPDATED, 'member'), async (req: Request, res: Response): Promise<void> => {
+router.put('/members/:id/role', requirePermission('member:role:update'), async (req: Request, res: Response): Promise<void> => {
   try {
     if (!req.tenant || !req.user) {
       res.status(400).json({
@@ -191,7 +190,7 @@ router.put('/members/:id/role', requirePermission('member:role:update'), auditLo
   }
 });
 
-router.delete('/members/:id', requirePermission('member:remove'), auditLog(AuditAction.MEMBER_REMOVED, 'member'), async (req: Request, res: Response): Promise<void> => {
+router.delete('/members/:id', requirePermission('member:remove'), async (req: Request, res: Response): Promise<void> => {
   try {
     if (!req.tenant || !req.user) {
       res.status(400).json({
@@ -239,7 +238,7 @@ router.get('/roles', requirePermission('role:read'), async (req: Request, res: R
   }
 });
 
-router.post('/roles', requirePermission('role:create'), auditLog(AuditAction.ROLE_CREATED, 'role'), async (req: Request, res: Response): Promise<void> => {
+router.post('/roles', requirePermission('role:create'), async (req: Request, res: Response): Promise<void> => {
   try {
     if (!req.tenant || !req.user) {
       res.status(400).json({

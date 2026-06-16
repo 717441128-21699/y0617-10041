@@ -37,21 +37,20 @@ export class MemberService {
       throw new Error('User is already a member of this tenant');
     }
 
-    const existingInvitation = await prisma.invitation.findFirst({
+    const existingInvitation = await tenantPrisma.invitation.findFirst({
       where: {
-        tenantId,
         email: input.email,
         status: 'PENDING',
       },
     });
 
     if (existingInvitation) {
-      await prisma.invitation.update({
+      await tenantPrisma.invitation.update({
         where: { id: existingInvitation.id },
         data: { expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) },
       });
 
-      const token = this.generateInvitationToken(existingInvitation.id);
+      const token = this.generateInvitationToken(existingInvitation.id, tenantId);
       const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
 
       await EmailService.sendInvitation(
@@ -73,9 +72,8 @@ export class MemberService {
       return { invitationId: existingInvitation.id, token };
     }
 
-    const invitation = await prisma.invitation.create({
+    const invitation = await tenantPrisma.invitation.create({
       data: {
-        tenantId,
         email: input.email,
         roleId: input.roleId,
         invitedBy,
@@ -83,7 +81,7 @@ export class MemberService {
       },
     });
 
-    const token = this.generateInvitationToken(invitation.id);
+    const token = this.generateInvitationToken(invitation.id, tenantId);
     const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
 
     await EmailService.sendInvitation(
@@ -106,9 +104,11 @@ export class MemberService {
   }
 
   static async acceptInvitation(token: string, password: string, name: string): Promise<{ userId: string; tenantId: string }> {
-    const invitationId = this.verifyInvitationToken(token);
+    const { invitationId, tenantId } = this.verifyInvitationToken(token);
 
-    const invitation = await prisma.invitation.findUnique({
+    const tenantPrisma = await getTenantClientById(tenantId);
+
+    const invitation = await tenantPrisma.invitation.findUnique({
       where: { id: invitationId },
     });
 
@@ -119,14 +119,12 @@ export class MemberService {
     }
 
     if (invitation.expiresAt < new Date()) {
-      await prisma.invitation.update({
+      await tenantPrisma.invitation.update({
         where: { id: invitationId },
         data: { status: 'EXPIRED' },
       });
       throw new Error('Invitation has expired');
     }
-
-    const tenantPrisma = await getTenantClientById(invitation.tenantId);
 
     const existingUser = await prisma.user.findUnique({
       where: { email: invitation.email },
@@ -170,12 +168,12 @@ export class MemberService {
       });
     }
 
-    await prisma.invitation.update({
+    await tenantPrisma.invitation.update({
       where: { id: invitationId },
       data: { status: 'ACCEPTED', acceptedAt: new Date() },
     });
 
-    return { userId, tenantId: invitation.tenantId };
+    return { userId, tenantId };
   }
 
   static async getMembers(
@@ -330,19 +328,19 @@ export class MemberService {
     return role;
   }
 
-  private static generateInvitationToken(invitationId: string): string {
-    return jwt.sign({ invitationId, type: 'invitation' }, process.env.JWT_SECRET || 'secret', {
+  private static generateInvitationToken(invitationId: string, tenantId: string): string {
+    return jwt.sign({ invitationId, tenantId, type: 'invitation' }, process.env.JWT_SECRET || 'secret', {
       expiresIn: '7d',
     });
   }
 
-  private static verifyInvitationToken(token: string): string {
+  private static verifyInvitationToken(token: string): { invitationId: string; tenantId: string } {
     try {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret') as { invitationId: string; type: string };
+      const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret') as { invitationId: string; tenantId: string; type: string };
       if (decoded.type !== 'invitation') {
         throw new Error('Invalid token type');
       }
-      return decoded.invitationId;
+      return { invitationId: decoded.invitationId, tenantId: decoded.tenantId };
     } catch (error) {
       throw new Error('Invalid or expired invitation token');
     }

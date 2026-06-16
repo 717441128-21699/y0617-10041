@@ -7,6 +7,7 @@ export interface TenantScopedPrisma extends PrismaClient {
   invoice: any;
   invoiceItem: any;
   auditLog: any;
+  invitation: any;
 }
 
 const TENANT_SCHEMA_CACHE_KEY = 'tenant_schema_name:';
@@ -83,12 +84,12 @@ class PrismaManager {
     const migrations: string[] = [];
     if (prismaDmmf && prismaDmmf.datamodel && prismaDmmf.datamodel.models) {
       const models = prismaDmmf.datamodel.models as any[];
-      const PUBLIC_ONLY_MODELS = ['Tenant', 'User', 'Invitation'];
+      const PUBLIC_ONLY_MODELS = ['Tenant', 'User'];
       for (const model of models) {
         if (PUBLIC_ONLY_MODELS.includes(model.name)) continue;
         const fields: string[] = [];
         for (const field of model.fields as any[]) {
-          if (field.kind !== 'scalar') continue;
+          if (field.kind !== 'scalar' && field.kind !== 'enum') continue;
           const dbType = typeMap[field.type] || 'VARCHAR(255)';
           const parts: string[] = [`"${field.name}" ${dbType}`];
           if (field.isId) parts.push('PRIMARY KEY');

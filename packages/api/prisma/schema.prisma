@@ -92,7 +92,6 @@ model User {
 
 model Invitation {
   id         String             @id @default(uuid())
-  tenantId   String
   email      String
   roleId     String
   invitedBy  String
@@ -100,7 +99,7 @@ model Invitation {
   acceptedAt DateTime?
   status     InvitationStatus @default(PENDING)
 
-  @@index([tenantId, email])
+  @@index([email])
   @@index([status])
 }
 

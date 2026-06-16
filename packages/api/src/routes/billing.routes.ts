@@ -1,8 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { BillingService } from '../services/billing.service';
 import { requirePermission } from '../middleware/auth';
-import { auditLog } from '../services/audit.service';
-import { AuditAction } from '@saas/shared';
 import { z } from 'zod';
 
 const router = Router();
@@ -65,7 +63,7 @@ router.get('/invoices', requirePermission('billing:read'), async (req: Request, 
   }
 });
 
-router.put('/tier', requirePermission('billing:update'), auditLog(AuditAction.BILLING_PLAN_CHANGED, 'billing'), async (req: Request, res: Response): Promise<void> => {
+router.put('/tier', requirePermission('billing:update'), async (req: Request, res: Response): Promise<void> => {
   try {
     if (!req.tenant || !req.user) {
       res.status(400).json({

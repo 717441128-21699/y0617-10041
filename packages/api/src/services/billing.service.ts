@@ -10,6 +10,7 @@ export class BillingService {
     const date = new Date().toISOString().split('T')[0];
     const monthKey = `usage:${tenantId}:${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
     const dailyKey = `usage:${tenantId}:${date}:${endpoint}:${method}`;
+    const cacheKey = `monthly_usage:${tenantId}:${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
 
     const [monthlyCount, dailyCount] = await Promise.all([
       redis.incr(monthKey),
@@ -23,6 +24,7 @@ export class BillingService {
     const freeCalls = billingTier.freeCalls;
 
     if ((tier === 'free' || tier === 'FREE') && monthlyCount > freeCalls) {
+      await cacheDel(cacheKey);
       await AuditService.log({
         tenantId,
         action: AuditAction.API_EXCEEDED_QUOTA,
@@ -53,6 +55,8 @@ export class BillingService {
         },
       },
     });
+
+    await cacheDel(cacheKey);
 
     return { allowed: true, count: monthlyCount, limit: freeCalls };
   }
